@@ -6,92 +6,112 @@
 <title>Nap Planner</title>
 
 <style>
-body { font-family: Arial; background:#1e1e1e; color:#fff; padding:20px; }
+body {
+  font-family: Arial;
+  background:#2b2b2b;
+  color:#fff;
+  margin:0;
+  padding:16px;
+}
+
 .container { max-width:1000px; margin:auto; }
 
-.grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+.top {
+  display:flex;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-bottom:20px;
+}
 
-.section { background:#2a2a2a; padding:15px; border-radius:12px; }
-
-.card {
-  background:#777;
-  padding:12px;
-  border-radius:10px;
-  margin:10px 0;
+.pill {
+  background:#444;
+  padding:6px 10px;
+  border-radius:8px;
   cursor:pointer;
 }
-.card.started { background:#6aa84f; }
-.card.done { background:#4a86e8; }
+
+.grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+}
+
+.section-title {
+  text-align:center;
+  margin-bottom:10px;
+}
+
+.block {
+  border-radius:14px;
+  padding:14px;
+  margin:8px 0;
+}
+
+.wake, .bed {
+  background:#d9c49c;
+  color:#000;
+}
+
+.nap {
+  background:#9fb3c8;
+}
+
+.nap.active { background:#6aa84f; }
+.nap.done { background:#4a86e8; }
+
+.awake {
+  text-align:center;
+  font-size:12px;
+  opacity:0.8;
+}
 
 .time {
+  float:right;
   background:#ddd;
   color:#000;
-  padding:3px 6px;
-  border-radius:6px;
+  padding:4px 8px;
+  border-radius:8px;
   cursor:pointer;
 }
 
-.modal {
-  position:fixed;
-  top:0; left:0;
-  width:100%; height:100%;
-  background:rgba(0,0,0,0.7);
-  display:flex;
-  align-items:center;
-  justify-content:center;
+.duration {
+  font-size:12px;
+  opacity:0.8;
 }
-.modal-box {
-  background:#fff;
-  color:#000;
-  padding:20px;
-  border-radius:12px;
-}
-
-.hidden { display:none; }
-
-.top-controls span { cursor:pointer; background:#ccc; color:#000; padding:3px 6px; border-radius:6px; }
 </style>
 </head>
 
 <body>
 <div class="container">
 
-<div class="top-controls">
-Wake: <span id="wakeDisplay"></span>
-| Bed: <span id="bedDisplay"></span>
-| Naps: <span id="napDisplay"></span>
-| Day Sleep: <span id="sleepDisplay"></span>
-<br><br>
-<button id="generate">Generate</button>
+<div class="top">
+  <div class="pill" id="wakeBtn"></div>
+  <div class="pill" id="bedBtn"></div>
+  <div class="pill" id="napBtn"></div>
+  <div class="pill" id="sleepBtn"></div>
+  <button id="generate">Generate</button>
 </div>
 
 <div class="grid">
-<div class="section">
-<h3>Ideal</h3>
-<div id="ideal"></div>
-</div>
+  <div>
+    <div class="section-title">Desired Schedule</div>
+    <div id="ideal"></div>
+  </div>
 
-<div class="section">
-<h3>Actual</h3>
-<div id="actual"></div>
-</div>
-</div>
-
-</div>
-
-<!-- Modal -->
-<div id="modal" class="modal hidden">
-  <div class="modal-box">
-    <input type="time" id="timeInput" step="900">
-    <br><br>
-    <button id="saveTime">Save</button>
+  <div>
+    <div class="section-title">Actual Adjusted Schedule</div>
+    <div id="actual"></div>
   </div>
 </div>
 
-<script>
-document.addEventListener("DOMContentLoaded", ()=>{
+<input type="time" id="hiddenTime" style="opacity:0; position:absolute; pointer-events:none;" step="900">
 
-/* ---------- STATE ---------- */
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded",()=>{
+
 const state={
   wake:420,
   bed:1140,
@@ -101,10 +121,10 @@ const state={
   actual:[]
 };
 
-let editingRef=null;
+let editingCallback=null;
 
 /* ---------- HELPERS ---------- */
-const round15 = m => Math.round(m/15)*15;
+const round15=m=>Math.round(m/15)*15;
 
 function toTime(m){
   let h=Math.floor(m/60)%24;
@@ -114,15 +134,25 @@ function toTime(m){
   return `${hh}:${min.toString().padStart(2,"0")} ${ampm}`;
 }
 
-function fromInput(val){
-  let [h,m]=val.split(":").map(Number);
+function fromInput(v){
+  let [h,m]=v.split(":").map(Number);
   return round15(h*60+m);
 }
 
-function nowRounded(){
-  const d=new Date();
-  return round15(d.getHours()*60+d.getMinutes());
+function openTimePicker(cb){
+  editingCallback=cb;
+  const input=document.getElementById("hiddenTime");
+  input.value="12:00";
+  input.click();
 }
+
+document.getElementById("hiddenTime").addEventListener("change",(e)=>{
+  if(editingCallback){
+    editingCallback(fromInput(e.target.value));
+    editingCallback=null;
+    render();
+  }
+});
 
 /* ---------- ENGINE ---------- */
 function generate(){
@@ -135,93 +165,77 @@ function generate(){
 
   for(let i=0;i<state.naps;i++){
     cur+=ww;
-    let start=round15(cur);
-    let end=round15(start+napLen);
-
-    state.ideal.push({start,end});
-    cur=end;
+    let s=round15(cur);
+    let e=round15(s+napLen);
+    state.ideal.push({start:s,end:e});
+    cur=e;
   }
 
   state.actual=JSON.parse(JSON.stringify(state.ideal));
 }
 
-function adjustFrom(i){
-  for(let x=i;x<state.actual.length;x++){
-    let prev=state.actual[x-1];
-    let idealGap = state.ideal[x].start - state.ideal[x-1].end;
-
-    state.actual[x].start=round15(prev.end+idealGap);
-    let len = state.ideal[x].end - state.ideal[x].start;
-    state.actual[x].end=round15(state.actual[x].start+len);
-  }
-}
-
-/* ---------- UI ---------- */
-const els={
-  ideal:document.getElementById("ideal"),
-  actual:document.getElementById("actual"),
-  wake:document.getElementById("wakeDisplay"),
-  bed:document.getElementById("bedDisplay"),
-  naps:document.getElementById("napDisplay"),
-  sleep:document.getElementById("sleepDisplay"),
-  generate:document.getElementById("generate"),
-  modal:document.getElementById("modal"),
-  input:document.getElementById("timeInput"),
-  saveTime:document.getElementById("saveTime")
-};
-
+/* ---------- RENDER ---------- */
 function renderTop(){
-  els.wake.textContent=toTime(state.wake);
-  els.bed.textContent=toTime(state.bed);
-  els.naps.textContent=state.naps;
-  els.sleep.textContent=state.daySleep+"h";
+  wakeBtn.textContent="Wake: "+toTime(state.wake);
+  bedBtn.textContent="Bed: "+toTime(state.bed);
+  napBtn.textContent="Naps: "+state.naps;
+  sleepBtn.textContent="Sleep: "+state.daySleep+"h";
 }
 
-function napExtras(i,list){
-  let len=list[i].end-list[i].start;
-  let wake = i===0 ? list[i].start-state.wake :
-    list[i].start-list[i-1].end;
-
-  return ` (${Math.round(len/60*100)/100}h nap, ${Math.round(wake/60*100)/100}h awake)`;
+function awakeText(prevEnd,nextStart){
+  return Math.round((nextStart-prevEnd)/60*100)/100+"h awake";
 }
 
-function renderList(container,list,isActual){
+function napLength(n){
+  return Math.round((n.end-n.start)/60*100)/100+"h";
+}
+
+function renderColumn(container,list,isActual){
   container.innerHTML="";
 
+  const wake=document.createElement("div");
+  wake.className="block wake";
+  wake.textContent="Wake Up";
+  const wt=document.createElement("span");
+  wt.className="time";
+  wt.textContent=toTime(state.wake);
+  wake.appendChild(wt);
+  container.appendChild(wake);
+
   list.forEach((nap,i)=>{
+
+    const awake=document.createElement("div");
+    awake.className="awake";
+    awake.textContent=i===0 ?
+      awakeText(state.wake,nap.start) :
+      awakeText(list[i-1].end,nap.start);
+    container.appendChild(awake);
+
     const card=document.createElement("div");
+    card.className="block nap";
 
     if(isActual){
-      if(nap.state==="started") card.className="card started";
-      else if(nap.state==="done") card.className="card done";
-      else card.className="card";
-    } else {
-      card.className="card";
+      if(nap.state==="started") card.classList.add("active");
+      if(nap.state==="done") card.classList.add("done");
     }
 
-    const start=document.createElement("span");
-    start.className="time";
-    start.textContent=toTime(nap.start);
+    const t=document.createElement("span");
+    t.className="time";
+    t.textContent=toTime(nap.start)+" - "+toTime(nap.end);
 
-    const end=document.createElement("span");
-    end.className="time";
-    end.textContent=toTime(nap.end);
+    const dur=document.createElement("div");
+    dur.className="duration";
+    dur.textContent=napLength(nap);
+
+    card.append("Nap "+(i+1));
+    card.appendChild(t);
+    card.appendChild(dur);
 
     if(isActual){
-      start.onclick=(e)=>{
+      t.onclick=(e)=>{
         e.stopPropagation();
-        openModal((val)=>{
+        openTimePicker(val=>{
           nap.start=val;
-          adjustFrom(i);
-          render();
-        });
-      };
-
-      end.onclick=(e)=>{
-        e.stopPropagation();
-        openModal((val)=>{
-          nap.end=val;
-          adjustFrom(i+1);
           render();
         });
       };
@@ -229,11 +243,10 @@ function renderList(container,list,isActual){
       card.onclick=()=>{
         if(!nap.state){
           nap.state="started";
-          nap.start=nowRounded();
+          nap.start=round15(new Date().getHours()*60+new Date().getMinutes());
         } else if(nap.state==="started"){
           nap.state="done";
-          nap.end=nowRounded();
-          adjustFrom(i+1);
+          nap.end=round15(new Date().getHours()*60+new Date().getMinutes());
         } else {
           nap.state=null;
           state.actual[i]=JSON.parse(JSON.stringify(state.ideal[i]));
@@ -242,62 +255,47 @@ function renderList(container,list,isActual){
       };
     }
 
-    card.append(`Nap ${i+1} `);
-    card.append(start);
-    card.append(" - ");
-    card.append(end);
-    card.append(document.createTextNode(napExtras(i,list)));
-
     container.appendChild(card);
   });
+
+  const bed=document.createElement("div");
+  bed.className="block bed";
+  bed.textContent="Bed Time";
+  const bt=document.createElement("span");
+  bt.className="time";
+  bt.textContent=toTime(state.bed);
+  bed.appendChild(bt);
+  container.appendChild(bed);
 }
 
 function render(){
   renderTop();
-  renderList(els.ideal,state.ideal,false);
-  renderList(els.actual,state.actual,true);
-}
-
-/* ---------- MODAL ---------- */
-function openModal(cb){
-  els.modal.classList.remove("hidden");
-
-  els.saveTime.onclick=()=>{
-    const val=fromInput(els.input.value);
-    els.modal.classList.add("hidden");
-    cb(val);
-  };
+  renderColumn(ideal,state.ideal,false);
+  renderColumn(actual,state.actual,true);
 }
 
 /* ---------- EVENTS ---------- */
-function bind(){
-  els.generate.onclick=()=>{ generate(); render(); };
+wakeBtn.onclick=()=>openTimePicker(v=>state.wake=v);
+bedBtn.onclick=()=>openTimePicker(v=>state.bed=v);
+napBtn.onclick=()=>{
+  let v=parseInt(prompt("Naps"));
+  if(v){state.naps=v; render();}
+};
+sleepBtn.onclick=()=>{
+  let v=parseFloat(prompt("Day sleep"));
+  if(v){state.daySleep=v; render();}
+};
 
-  els.wake.onclick=()=>{
-    openModal(v=>{state.wake=v; render();});
-  };
-
-  els.bed.onclick=()=>{
-    openModal(v=>{state.bed=v; render();});
-  };
-
-  els.naps.onclick=()=>{
-    let v=parseInt(prompt("Naps"));
-    if(v){state.naps=v; render();}
-  };
-
-  els.sleep.onclick=()=>{
-    let v=parseFloat(prompt("Day sleep"));
-    if(v){state.daySleep=v; render();}
-  };
-}
+generate.onclick=()=>{
+  generate();
+  render();
+};
 
 /* ---------- INIT ---------- */
-bind();
 generate();
 render();
 
 });
 </script>
 </body>
-</html>V
+</html>
