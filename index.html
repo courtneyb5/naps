@@ -1,23 +1,35 @@
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"></script>
+<script type="module">
 
-<script>
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-// 🔥 PASTE YOUR FIREBASE CONFIG HERE
+// 🔥 your config
 const firebaseConfig = {
-    apiKey: "AIzaSyCwn2I8pJCngFibXePxcZ3jORVqL8DZkHQ",
-    authDomain: "nap-planner-57098.firebaseapp.com",
-    projectId: "nap-planner-57098",
-    storageBucket: "nap-planner-57098.firebasestorage.app",
-    messagingSenderId: "945255557653",
-    appId: "1:945255557653:web:55725550ef6fe1c3ec7c1c"
-  };
+  apiKey: "AIzaSyCwn2I8pJCngFibXePxcZ3jORVqL8DZkHQ",
+  authDomain: "nap-planner-57098.firebaseapp.com",
+  projectId: "nap-planner-57098",
+  storageBucket: "nap-planner-57098.firebasestorage.app",
+  messagingSenderId: "945255557653",
+  appId: "1:945255557653:web:55725550ef6fe1c3ec7c1c"
+};
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
-// 🔑 shared room (you can change this name)
 const room = "malakai";
+
+// 🔄 LISTEN
+onValue(ref(db, "plans/" + room), snapshot => {
+  if(snapshot.exists()){
+    planData = snapshot.val();
+    render();
+  }
+});
+
+// 💾 SAVE
+function save(){
+  set(ref(db, "plans/" + room), planData);
+}
 
 // ===== EXISTING FUNCTIONS =====
 
