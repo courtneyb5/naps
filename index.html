@@ -3,240 +3,217 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCwn2I8pJCngFibXePxcZ3jORVqL8DZkHQ",
-  authDomain: "nap-planner-57098.firebaseapp.com",
-  databaseURL: "https://nap-planner-57098-default-rtdb.firebaseio.com",
-  projectId: "nap-planner-57098",
-  storageBucket: "nap-planner-57098.firebasestorage.app",
-  messagingSenderId: "945255557653",
-  appId: "1:945255557653:web:55725550ef6fe1c3ec7c1c"
-};
+document.addEventListener("DOMContentLoaded", () => {
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+  const firebaseConfig = {
+    apiKey: "AIzaSyCwn2I8pJCngFibXePxcZ3jORVqL8DZkHQ",
+    authDomain: "nap-planner-57098.firebaseapp.com",
+    databaseURL: "https://nap-planner-57098-default-rtdb.firebaseio.com",
+    projectId: "nap-planner-57098",
+    storageBucket: "nap-planner-57098.firebasestorage.app",
+    messagingSenderId: "945255557653",
+    appId: "1:945255557653:web:55725550ef6fe1c3ec7c1c"
+  };
 
-const room = "malakai";
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
 
-// ================= DOM =================
-const wakeBtn = document.getElementById("wakeBtn");
-const bedBtn = document.getElementById("bedBtn");
-const napsVal = document.getElementById("napsVal");
-const sleepVal = document.getElementById("sleepVal");
+  const room = "malakai";
 
-const wakeSlider = document.getElementById("wakeSlider");
-const bedSlider = document.getElementById("bedSlider");
-const napsEl = document.getElementById("naps");
-const daySleepEl = document.getElementById("daySleep");
+  // ===== DOM (SAFE NOW) =====
+  const wakeBtn = document.getElementById("wakeBtn");
+  const bedBtn = document.getElementById("bedBtn");
+  const napsVal = document.getElementById("napsVal");
+  const sleepVal = document.getElementById("sleepVal");
 
-const output = document.getElementById("output");
+  const wakeSlider = document.getElementById("wakeSlider");
+  const bedSlider = document.getElementById("bedSlider");
+  const napsEl = document.getElementById("naps");
+  const daySleepEl = document.getElementById("daySleep");
 
-// ================= STATE =================
-window.planData = {
-  wake: 420,
-  bed: 1140,
-  naps: 4,
-  daySleep: 240,
-  actual: []
-};
+  const output = document.getElementById("output");
 
-// ================= HELPERS =================
-function nowMin(){
-  let d = new Date();
-  return d.getHours()*60 + d.getMinutes();
-}
+  // ===== STATE =====
+  window.planData = {
+    wake: 420,
+    bed: 1140,
+    naps: 4,
+    daySleep: 240,
+    actual: []
+  };
 
-function toTime(m){
-  let h = Math.floor(m/60);
-  let min = m%60;
-  let ampm = h >= 12 ? "pm" : "am";
-  h = h%12 || 12;
-  return `${h}:${String(min).padStart(2,'0')} ${ampm}`;
-}
+  // ===== HELPERS =====
+  function nowMin(){
+    let d = new Date();
+    return d.getHours()*60 + d.getMinutes();
+  }
 
-function formatHM(m){
-  let h = Math.floor(m/60);
-  let min = Math.round(m%60);
-  return `${h}h ${min}m`;
-}
+  function toTime(m){
+    let h = Math.floor(m/60);
+    let min = m%60;
+    let ampm = h >= 12 ? "pm" : "am";
+    h = h%12 || 12;
+    return `${h}:${String(min).padStart(2,'0')} ${ampm}`;
+  }
 
-function minToInput(m){
-  return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-}
+  function formatHM(m){
+    let h = Math.floor(m/60);
+    let min = Math.round(m%60);
+    return `${h}h ${min}m`;
+  }
 
-function parseTime(t){
-  let [h,m] = t.split(":");
-  return (+h)*60 + (+m);
-}
+  function minToInput(m){
+    return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+  }
 
-// ================= FIREBASE =================
-onValue(ref(db, "plans/" + room), (snapshot) => {
-  if (snapshot.exists()) {
-    window.planData = snapshot.val();
-    updateUI();
+  function parseTime(t){
+    let [h,m] = t.split(":").map(Number);
+    return h*60 + m;
+  }
+
+  // ===== FIREBASE =====
+  onValue(ref(db, "plans/" + room), (snapshot) => {
+    if (snapshot.exists()) {
+      window.planData = snapshot.val();
+      updateUI();
+      render();
+    }
+  });
+
+  function save(){
+    set(ref(db, "plans/" + room), window.planData);
+  }
+
+  // ===== UI =====
+  function updateUI(){
+    if(!wakeBtn) return;
+
+    wakeBtn.innerText = toTime(planData.wake);
+    bedBtn.innerText = toTime(planData.bed);
+
+    wakeSlider.value = planData.wake;
+    bedSlider.value = planData.bed;
+
+    napsVal.innerText = napsEl.value + " naps";
+    sleepVal.innerText = daySleepEl.value + " hrs";
+  }
+
+  // ===== GENERATE =====
+  window.initPlan = function(){
+    planData.naps = +napsEl.value;
+    planData.daySleep = daySleepEl.value * 60;
+
+    let awake = (planData.bed - planData.wake) - planData.daySleep;
+    planData.base = Math.round((awake / (planData.naps + 1)) / 15) * 15;
+
+    let weights = [0.35,0.25,0.25,0.15];
+    planData.lengths = weights.map(w => w * planData.daySleep);
+
+    planData.actual = Array(planData.naps).fill(null);
+
+    save();
     render();
-  }
-});
+  };
 
-function save(){
-  set(ref(db, "plans/" + room), window.planData);
-}
-
-// ================= UI =================
-function updateUI(){
-  wakeBtn.innerText = toTime(planData.wake);
-  bedBtn.innerText = toTime(planData.bed);
-
-  wakeSlider.value = planData.wake;
-  bedSlider.value = planData.bed;
-
-  napsVal.innerText = napsEl.value + " naps";
-  sleepVal.innerText = daySleepEl.value + " hrs";
-}
-
-wakeSlider.oninput = () => {
-  planData.wake = +wakeSlider.value;
-  updateUI();
-  save();
-};
-
-bedSlider.oninput = () => {
-  planData.bed = +bedSlider.value;
-  updateUI();
-  save();
-};
-
-napsEl.oninput = updateUI;
-daySleepEl.oninput = updateUI;
-
-// ================= GENERATE =================
-window.initPlan = function(){
-  planData.naps = +napsEl.value;
-  planData.daySleep = daySleepEl.value * 60;
-
-  let awake = (planData.bed - planData.wake) - planData.daySleep;
-  planData.base = Math.round((awake / (planData.naps + 1)) / 15) * 15;
-
-  let weights = [0.35,0.25,0.25,0.15];
-  planData.lengths = weights.map(w => w * planData.daySleep);
-
-  planData.actual = Array(planData.naps).fill(null);
-
-  save();
-  render();
-};
-
-// ================= NAP TOGGLE =================
-window.tapNap = function(i){
-  let nap = planData.actual[i];
-
-  if(!nap){
-    planData.actual[i] = {
-      start: nowMin(),
-      end: null,
-      active: true
-    };
-  }
-  else if(nap.active){
-    nap.end = nowMin();
-    nap.active = false;
-  }
-  else {
-    planData.actual[i] = {
-      start: nowMin(),
-      end: null,
-      active: true
-    };
-  }
-
-  save();
-  render();
-};
-
-// ================= TIME EDIT (POPUP) =================
-window.editTime = function(i, type){
-  let nap = planData.actual[i];
-  if(!nap) return;
-
-  let current = nap[type] || nowMin();
-  let input = prompt(`Edit ${type} time (HH:MM)`, minToInput(current));
-
-  if(!input) return;
-
-  let [h,m] = input.split(":").map(Number);
-  if(isNaN(h) || isNaN(m)) return;
-
-  let newMin = h*60 + m;
-
-  if(!planData.actual[i]) planData.actual[i] = {};
-  planData.actual[i][type] = newMin;
-
-  save();
-  render();
-};
-
-// ================= RENDER =================
-function render(){
-  if(!planData.naps) return;
-
-  let html = `
-    <div class="card wakeCard">
-      Wake Up ${toTime(planData.wake)}
-    </div>
-  `;
-
-  let current = planData.wake;
-
-  for(let i=0;i<planData.naps;i++){
-
-    html += `<div class="line">Awake: ${formatHM(planData.base)}</div>`;
-
+  // ===== TAP NAP =====
+  window.tapNap = function(i){
     let nap = planData.actual[i];
 
-    let start = nap?.start || current + planData.base;
-    let end;
-
-    if(nap?.end){
-      end = nap.end;
-      current = end;
-    } else if(nap?.start){
-      end = nowMin();
-      current = end;
-    } else {
-      end = start + (planData.lengths?.[i] || 0);
-      current = end;
+    if(!nap){
+      planData.actual[i] = {
+        start: nowMin(),
+        end: null,
+        active: true
+      };
+    }
+    else if(nap.active){
+      nap.end = nowMin();
+      nap.active = false;
+    }
+    else {
+      planData.actual[i] = {
+        start: nowMin(),
+        end: null,
+        active: true
+      };
     }
 
-    let duration = end - start;
+    save();
+    render();
+  };
 
-    let napClass = "napCard";
-    if (nap?.active) napClass += " active";
-    if (nap?.end && !nap?.active) napClass += " done";
+  // ===== EDIT TIME =====
+  window.editTime = function(i,type){
+    let nap = planData.actual[i];
+    if(!nap) return;
 
-    html += `
-      <div class="card ${napClass}" onclick="tapNap(${i})">
-        <div>
-          <b>Nap ${i+1}</b><br>
-          ${formatHM(duration)}
+    let input = prompt("Edit time (HH:MM)", minToInput(nap[type] || nowMin()));
+    if(!input) return;
+
+    let [h,m] = input.split(":").map(Number);
+    planData.actual[i][type] = h*60 + m;
+
+    save();
+    render();
+  };
+
+  // ===== RENDER =====
+  function render(){
+    if(!planData.naps) return;
+
+    let html = `<div class="card wakeCard">Wake Up ${toTime(planData.wake)}</div>`;
+
+    let current = planData.wake;
+
+    for(let i=0;i<planData.naps;i++){
+
+      let nap = planData.actual[i];
+
+      let start = nap?.start || current + planData.base;
+      let end = nap?.end || start + (planData.lengths?.[i] || 0);
+
+      let napClass = "napCard";
+      if(nap?.active) napClass += " active";
+      if(nap?.end && !nap?.active) napClass += " done";
+
+      html += `
+        <div class="card ${napClass}" onclick="tapNap(${i})">
+          <div>
+            <b>Nap ${i+1}</b><br>
+            ${formatHM(end - start)}
+          </div>
+          <div>
+            <span onclick="event.stopPropagation(); editTime(${i},'start')">
+              ${toTime(start)}
+            </span>
+            -
+            <span onclick="event.stopPropagation(); editTime(${i},'end')">
+              ${toTime(end)}
+            </span>
+          </div>
         </div>
+      `;
+    }
 
-        <div>
-          <span onclick="event.stopPropagation(); editTime(${i},'start')">
-            ${toTime(start)}
-          </span>
-          -
-          <span onclick="event.stopPropagation(); editTime(${i},'end')">
-            ${toTime(end)}
-          </span>
-        </div>
-      </div>
-    `;
+    output.innerHTML = html;
   }
 
-  output.innerHTML = html;
-}
+  // ===== SLIDERS =====
+  wakeSlider.oninput = () => {
+    planData.wake = +wakeSlider.value;
+    updateUI(); save(); render();
+  };
 
-// ================= INIT =================
-updateUI();
+  bedSlider.oninput = () => {
+    planData.bed = +bedSlider.value;
+    updateUI(); save(); render();
+  };
+
+  napsEl.oninput = updateUI;
+  daySleepEl.oninput = updateUI;
+
+  // INIT
+  updateUI();
+});
 
 </script>
