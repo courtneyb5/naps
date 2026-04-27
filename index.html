@@ -1,16 +1,18 @@
+window.onerror = function(msg, url, line) {
+  document.body.innerHTML = "<pre>" + msg + "</pre>";
+};
+
 <script type="module">
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-// 🔥 your config
+// 🔥 IMPORTANT: include databaseURL
 const firebaseConfig = {
   apiKey: "AIzaSyCwn2I8pJCngFibXePxcZ3jORVqL8DZkHQ",
   authDomain: "nap-planner-57098.firebaseapp.com",
-  projectId: "nap-planner-57098",
-  storageBucket: "nap-planner-57098.firebasestorage.app",
-  messagingSenderId: "945255557653",
-  appId: "1:945255557653:web:55725550ef6fe1c3ec7c1c"
+  databaseURL: "https://nap-planner-57098-default-rtdb.firebaseio.com/",
+  projectId: "nap-planner-57098"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -18,18 +20,23 @@ const db = getDatabase(app);
 
 const room = "malakai";
 
-// 🔄 LISTEN
-onValue(ref(db, "plans/" + room), snapshot => {
-  if(snapshot.exists()){
-    planData = snapshot.val();
+// global so rest of your code can see it
+window.planData = {};
+
+// listen
+onValue(ref(db, "plans/" + room), (snapshot) => {
+  if (snapshot.exists()) {
+    window.planData = snapshot.val();
     render();
   }
 });
 
-// 💾 SAVE
-function save(){
-  set(ref(db, "plans/" + room), planData);
-}
+// save
+window.save = function () {
+  set(ref(db, "plans/" + room), window.planData);
+};
+
+</script>
 
 // ===== EXISTING FUNCTIONS =====
 
