@@ -1,18 +1,86 @@
-window.onerror = function(msg, url, line) {
-  document.body.innerHTML = "<pre>" + msg + "</pre>";
-};
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Nap Planner</title>
+  <style>
+    body {
+      font-family: Arial;
+      background: #2b2b2b;
+      color: white;
+      padding: 15px;
+      max-width: 500px;
+      margin: auto;
+    }
+
+    .label { margin-top: 10px; }
+
+    .timeBtn {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      background: #444;
+      color: white;
+      margin-bottom: 10px;
+    }
+
+    .slider { width: 100%; }
+
+    .card {
+      border-radius: 20px;
+      padding: 15px;
+      margin: 10px 0;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .wakeCard { background: #d8c39a; color: black; font-weight: bold; }
+    .napCard { background: #9fb3c8; color: black; }
+    .napCard.active { background: #6fa8dc; }
+    .napCard.done { background: #7fb77e; }
+
+    .line {
+      border-left: 2px solid #aaa;
+      margin: 10px 20px;
+      padding-left: 15px;
+      color: #ccc;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Nap Planner</h2>
+
+<div class="label">Wake Up</div>
+<button class="timeBtn" onclick="pickTime('wake')" id="wakeBtn"></button>
+
+<div class="label">Bedtime</div>
+<button class="timeBtn" onclick="pickTime('bed')" id="bedBtn"></button>
+
+<div class="label">Number of Naps</div>
+<input type="range" min="1" max="5" value="4" id="naps" class="slider">
+
+<div class="label">Day Sleep (hrs)</div>
+<input type="range" min="1" max="6" step="0.25" value="4" id="daySleep" class="slider">
+
+<button onclick="initPlan()">Generate</button>
+
+<div id="output"></div>
 
 <script type="module">
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-// 🔥 IMPORTANT: include databaseURL
+// 🔥 YOUR CONFIG (already filled)
 const firebaseConfig = {
   apiKey: "AIzaSyCwn2I8pJCngFibXePxcZ3jORVqL8DZkHQ",
   authDomain: "nap-planner-57098.firebaseapp.com",
-  databaseURL: "https://nap-planner-57098-default-rtdb.firebaseio.com/",
-  projectId: "nap-planner-57098"
+  databaseURL: "https://nap-planner-57098-default-rtdb.firebaseio.com",
+  projectId: "nap-planner-57098",
+  storageBucket: "nap-planner-57098.firebasestorage.app",
+  messagingSenderId: "945255557653",
+  appId: "1:945255557653:web:55725550ef6fe1c3ec7c1c"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -20,26 +88,13 @@ const db = getDatabase(app);
 
 const room = "malakai";
 
-// global so rest of your code can see it
-window.planData = {};
-
-// listen
-onValue(ref(db, "plans/" + room), (snapshot) => {
-  if (snapshot.exists()) {
-    window.planData = snapshot.val();
-    render();
-  }
-});
-
-// save
-window.save = function () {
-  set(ref(db, "plans/" + room), window.planData);
+// ===== STATE =====
+let planData = {
+  wake: 420,
+  bed: 1140
 };
 
-</script>
-
-// ===== EXISTING FUNCTIONS =====
-
+// ===== HELPERS =====
 function nowMin(){
   let d=new Date();
   return d.getHours()*60+d.getMinutes();
@@ -64,33 +119,47 @@ function parseTime(t){
   return h*60 + +m;
 }
 
-// ===== SYNC STATE =====
+function minToInput(m){
+  return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+}
 
-let planData = {};
-
-// 🔄 LISTEN FOR CHANGES (this is the magic)
-db.ref("plans/" + room).on("value", snapshot => {
-  if(snapshot.exists()){
+// ===== SYNC =====
+onValue(ref(db, "plans/" + room), (snapshot) => {
+  if (snapshot.exists()) {
     planData = snapshot.val();
+    updateButtons();
     render();
   }
 });
 
-// 💾 SAVE
 function save(){
-  db.ref("plans/" + room).set(planData);
+  set(ref(db, "plans/" + room), planData);
 }
 
-// ===== APP LOGIC =====
+// ===== INPUTS =====
+function pickTime(type){
+  let input=document.createElement("input");
+  input.type="time";
+  input.value=minToInput(planData[type]);
 
-function initPlan(){
-  planData = {
-    wake: planData.wake || 420,
-    bed: planData.bed || 1140,
-    naps: +naps.value,
-    daySleep: daySleep.value*60,
-    actual: Array(+naps.value).fill(null)
+  input.onchange=()=>{
+    planData[type]=parseTime(input.value);
+    updateButtons();
+    save();
   };
+
+  input.click();
+}
+
+function updateButtons(){
+  wakeBtn.innerText = toTime(planData.wake);
+  bedBtn.innerText = toTime(planData.bed);
+}
+
+// ===== PLAN =====
+function initPlan(){
+  planData.naps = +document.getElementById("naps").value;
+  planData.daySleep = document.getElementById("daySleep").value * 60;
 
   let awake=(planData.bed-planData.wake)-planData.daySleep;
   planData.base=Math.round((awake/(planData.naps+1))/15)*15;
@@ -98,9 +167,12 @@ function initPlan(){
   let weights=[0.35,0.25,0.25,0.15];
   planData.lengths=weights.map(w=>w*planData.daySleep);
 
+  planData.actual=Array(planData.naps).fill(null);
+
   save();
 }
 
+// ===== INTERACTIONS =====
 function tapNap(i){
   let nap=planData.actual[i];
 
@@ -121,7 +193,7 @@ function editTime(i,type){
 
   let input=document.createElement("input");
   input.type="time";
-  input.value=`${String(Math.floor(val/60)).padStart(2,'0')}:${String(val%60).padStart(2,'0')}`;
+  input.value=minToInput(val);
 
   input.onchange=()=>{
     if(!planData.actual[i]) planData.actual[i]={};
@@ -132,7 +204,10 @@ function editTime(i,type){
   input.click();
 }
 
+// ===== RENDER =====
 function render(){
+  if(!planData.naps) return;
+
   let html=`<div class="card wakeCard">
     Wake Up ${toTime(planData.wake)}
   </div>`;
@@ -161,8 +236,10 @@ function render(){
 
     let duration=end-start;
 
+    let stateClass = nap?.end ? "done" : nap?.start ? "active" : "";
+
     html+=`
-    <div class="card napCard" onclick="tapNap(${i})">
+    <div class="card napCard ${stateClass}" onclick="tapNap(${i})">
 
       <div>
         <b>Nap ${i+1}</b><br>
@@ -182,7 +259,30 @@ function render(){
     </div>`;
   }
 
-  output.innerHTML=html;
+  let finalWindow = planData.base + 15;
+  let targetBed = planData.bed;
+  let suggestedBed = current + finalWindow;
+
+  let minBed = targetBed - 30;
+  let maxBed = targetBed + 30;
+
+  if(suggestedBed < minBed) suggestedBed = minBed;
+  if(suggestedBed > maxBed) suggestedBed = maxBed;
+
+  html+=`<div class="line">Awake: ${formatHM(finalWindow)}</div>`;
+
+  html+=`
+  <div class="card wakeCard">
+    Bedtime ${toTime(suggestedBed)}
+  </div>`;
+
+  document.getElementById("output").innerHTML=html;
 }
 
+// init UI
+updateButtons();
+
 </script>
+
+</body>
+</html>
