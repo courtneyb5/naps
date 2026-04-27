@@ -167,7 +167,30 @@ function renderTop(){
 function renderColumn(container,list,isActual){
   container.innerHTML="";
 
+  /* --- WAKE BLOCK (FIXED) --- */
+  const wake=document.createElement("div");
+  wake.className="block wake";
+
+  const wakeTime=document.createElement("span");
+  wakeTime.className="time";
+  wakeTime.textContent=toTime(state.wake);
+
+  if(isActual){
+    wakeTime.onclick=(e)=>{
+      e.stopPropagation();
+      openTime(val=>{
+        state.wake=val;
+        render();
+      });
+    };
+  }
+
+  wake.append("Wake Up");
+  wake.appendChild(wakeTime);
+  container.appendChild(wake);
+
   list.forEach((nap,i)=>{
+
     const awake=document.createElement("div");
     awake.className="awake";
 
@@ -194,6 +217,70 @@ function renderColumn(container,list,isActual){
     const dur=document.createElement("div");
     dur.className="duration";
     dur.textContent=((nap.end-nap.start)/60).toFixed(2)+"h";
+
+    if(isActual){
+      start.onclick=(e)=>{
+        e.stopPropagation();
+        openTime(val=>{
+          nap.start=val;
+          render();
+        });
+      };
+
+      end.onclick=(e)=>{
+        e.stopPropagation();
+        openTime(val=>{
+          nap.end=val;
+          render();
+        });
+      };
+
+      card.onclick=()=>{
+        if(!nap.state){
+          nap.state="started";
+          nap.start=round15(new Date().getHours()*60+new Date().getMinutes());
+        } else if(nap.state==="started"){
+          nap.state="done";
+          nap.end=round15(new Date().getHours()*60+new Date().getMinutes());
+        } else {
+          nap.state=null;
+          state.actual[i]=JSON.parse(JSON.stringify(state.ideal[i]));
+        }
+        render();
+      };
+    }
+
+    card.append(`Nap ${i+1}`);
+    card.appendChild(start);
+    card.append(" - ");
+    card.appendChild(end);
+    card.appendChild(dur);
+
+    container.appendChild(card);
+  });
+
+  /* --- BED BLOCK (FIXED) --- */
+  const bed=document.createElement("div");
+  bed.className="block bed";
+
+  const bedTime=document.createElement("span");
+  bedTime.className="time";
+  bedTime.textContent=toTime(state.bed);
+
+  if(isActual){
+    bedTime.onclick=(e)=>{
+      e.stopPropagation();
+      openTime(val=>{
+        state.bed=val;
+        render();
+      });
+    };
+  }
+
+  bed.append("Bed Time");
+  bed.appendChild(bedTime);
+  container.appendChild(bed);
+}
 
     /* FIXED CLICK HANDLING */
     if(isActual){
