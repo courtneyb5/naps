@@ -1,10 +1,114 @@
-<script type="module">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Nap Planner</title>
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #1e1e1e;
+  color: #fff;
+  margin: 0;
+  padding: 20px;
+}
+.container { max-width: 800px; margin: auto; }
 
-document.addEventListener("DOMContentLoaded", () => {
+.card {
+  background: #3a4a5a;
+  padding: 15px;
+  border-radius: 12px;
+  margin: 10px 0;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.card.active { background: #6aa84f; }
 
+.controls {
+  display: grid;
+  gap: 10px;
+}
+
+label { font-size: 14px; }
+
+input[type="range"] { width: 100%; }
+
+button {
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  background: #d4b483;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.time {
+  background: #ccc;
+  color: #000;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h2>Nap Planner</h2>
+
+<div class="controls">
+  <label>Wake Time: <span id="wakeLabel"></span></label>
+  <input id="wake" type="range" min="0" max="1440" step="15">
+
+  <label>Bedtime: <span id="bedLabel"></span></label>
+  <input id="bed" type="range" min="0" max="1440" step="15">
+
+  <label>Naps: <span id="napCountLabel"></span></label>
+  <input id="napCount" type="range" min="1" max="6">
+
+  <label>Day Sleep (hrs): <span id="daySleepLabel"></span></label>
+  <input id="daySleep" type="range" min="1" max="6" step="0.25">
+
+  <button id="generate">Generate Schedule</button>
+</div>
+
+<div id="schedule"></div>
+
+</div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+  /** SAFE DOM */
+  function $(id) {
+    return document.getElementById(id);
+  }
+
+  const els = {
+    wake: $("wake"),
+    bed: $("bed"),
+    napCount: $("napCount"),
+    daySleep: $("daySleep"),
+    generate: $("generate"),
+    schedule: $("schedule"),
+    wakeLabel: $("wakeLabel"),
+    bedLabel: $("bedLabel"),
+    napCountLabel: $("napCountLabel"),
+    daySleepLabel: $("daySleepLabel")
+  };
+
+  if (!els.wake || !els.schedule) {
+    console.error("DOM not ready");
+    return;
+  }
+
+  /** FIREBASE INIT */
   const firebaseConfig = {
     apiKey: "AIzaSyCwn2I8pJCngFibXePxcZ3jORVqL8DZkHQ",
     authDomain: "nap-planner-57098.firebaseapp.com",
@@ -15,205 +119,198 @@ document.addEventListener("DOMContentLoaded", () => {
     appId: "1:945255557653:web:55725550ef6fe1c3ec7c1c"
   };
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
+  let db = null;
 
-  const room = "malakai";
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    db = firebase.database();
+  } catch (err) {
+    console.warn("Firebase failed safely:", err);
+  }
 
-  // ===== DOM (SAFE NOW) =====
-  const wakeBtn = document.getElementById("wakeBtn");
-  const bedBtn = document.getElementById("bedBtn");
-  const napsVal = document.getElementById("napsVal");
-  const sleepVal = document.getElementById("sleepVal");
-
-  const wakeSlider = document.getElementById("wakeSlider");
-  const bedSlider = document.getElementById("bedSlider");
-  const napsEl = document.getElementById("naps");
-  const daySleepEl = document.getElementById("daySleep");
-
-  const output = document.getElementById("output");
-
-  // ===== STATE =====
-  window.planData = {
+  /** STATE ENGINE */
+  const state = {
     wake: 420,
     bed: 1140,
     naps: 4,
-    daySleep: 240,
-    actual: []
+    daySleep: 4,
+    napData: []
   };
 
-  // ===== HELPERS =====
-  function nowMin(){
-    let d = new Date();
-    return d.getHours()*60 + d.getMinutes();
+  function minutesToTime(m) {
+    const h = Math.floor(m / 60) % 24;
+    const min = m % 60;
+    const ampm = h >= 12 ? "pm" : "am";
+    const hh = h % 12 || 12;
+    return `${hh}:${min.toString().padStart(2, "0")} ${ampm}`;
   }
 
-  function toTime(m){
-    let h = Math.floor(m/60);
-    let min = m%60;
-    let ampm = h >= 12 ? "pm" : "am";
-    h = h%12 || 12;
-    return `${h}:${String(min).padStart(2,'0')} ${ampm}`;
+  function timeToMinutes(str) {
+    try {
+      const [time, mod] = str.trim().toLowerCase().split(" ");
+      let [h, m] = time.split(":").map(Number);
+      if (mod === "pm" && h !== 12) h += 12;
+      if (mod === "am" && h === 12) h = 0;
+      return h * 60 + m;
+    } catch {
+      return 0;
+    }
   }
 
-  function formatHM(m){
-    let h = Math.floor(m/60);
-    let min = Math.round(m%60);
-    return `${h}h ${min}m`;
+  function generateSchedule() {
+    const totalAwake = state.bed - state.wake - state.daySleep * 60;
+    if (totalAwake <= 0) return;
+
+    const wakeWindow = totalAwake / (state.naps + 1);
+    const napLength = (state.daySleep * 60) / state.naps;
+
+    let current = state.wake;
+    state.napData = [];
+
+    for (let i = 0; i < state.naps; i++) {
+      current += wakeWindow;
+
+      const start = Math.round(current);
+      const end = Math.round(start + napLength);
+
+      state.napData.push({
+        start,
+        end,
+        active: false
+      });
+
+      current = end;
+    }
   }
 
-  function minToInput(m){
-    return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+  /** UI RENDER */
+  function render() {
+    els.wakeLabel.textContent = minutesToTime(state.wake);
+    els.bedLabel.textContent = minutesToTime(state.bed);
+    els.napCountLabel.textContent = state.naps;
+    els.daySleepLabel.textContent = state.daySleep + "h";
+
+    els.schedule.innerHTML = "";
+
+    if (!state.napData || state.napData.length === 0) return;
+
+    state.napData.forEach((nap, i) => {
+      const card = document.createElement("div");
+      card.className = "card" + (nap.active ? " active" : "");
+
+      const startSpan = document.createElement("span");
+      startSpan.className = "time";
+      startSpan.textContent = minutesToTime(nap.start);
+
+      const endSpan = document.createElement("span");
+      endSpan.className = "time";
+      endSpan.textContent = minutesToTime(nap.end);
+
+      startSpan.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const val = prompt("Enter time (e.g. 8:30 am)");
+        if (val) {
+          const parsed = timeToMinutes(val);
+          if (!isNaN(parsed)) nap.start = parsed;
+          save();
+          render();
+        }
+      });
+
+      endSpan.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const val = prompt("Enter time (e.g. 9:30 am)");
+        if (val) {
+          const parsed = timeToMinutes(val);
+          if (!isNaN(parsed)) nap.end = parsed;
+          save();
+          render();
+        }
+      });
+
+      card.addEventListener("click", () => {
+        nap.active = !nap.active;
+        save();
+        render();
+      });
+
+      card.appendChild(document.createTextNode("Nap " + (i + 1) + " "));
+      card.appendChild(startSpan);
+      card.appendChild(document.createTextNode(" - "));
+      card.appendChild(endSpan);
+
+      els.schedule.appendChild(card);
+    });
   }
 
-  function parseTime(t){
-    let [h,m] = t.split(":").map(Number);
-    return h*60 + m;
+  /** FIREBASE SYNC */
+  function save() {
+    if (!db) return;
+    db.ref("napPlanner").set(state);
   }
 
-  // ===== FIREBASE =====
-  onValue(ref(db, "plans/" + room), (snapshot) => {
-    if (snapshot.exists()) {
-      window.planData = snapshot.val();
-      updateUI();
+  function load() {
+    if (!db) {
       render();
+      return;
     }
-  });
 
-  function save(){
-    set(ref(db, "plans/" + room), window.planData);
+    db.ref("napPlanner").on("value", (snap) => {
+      const data = snap.val();
+      if (data && typeof data === "object") {
+        Object.assign(state, data);
+      }
+      render();
+    });
   }
 
-  // ===== UI =====
-  function updateUI(){
-    if(!wakeBtn) return;
+  /** EVENTS */
+  function bind() {
+    els.wake.addEventListener("input", () => {
+      state.wake = Number(els.wake.value);
+      render(); save();
+    });
 
-    wakeBtn.innerText = toTime(planData.wake);
-    bedBtn.innerText = toTime(planData.bed);
+    els.bed.addEventListener("input", () => {
+      state.bed = Number(els.bed.value);
+      render(); save();
+    });
 
-    wakeSlider.value = planData.wake;
-    bedSlider.value = planData.bed;
+    els.napCount.addEventListener("input", () => {
+      state.naps = Number(els.napCount.value);
+      render(); save();
+    });
 
-    napsVal.innerText = napsEl.value + " naps";
-    sleepVal.innerText = daySleepEl.value + " hrs";
+    els.daySleep.addEventListener("input", () => {
+      state.daySleep = Number(els.daySleep.value);
+      render(); save();
+    });
+
+    els.generate.addEventListener("click", () => {
+      generateSchedule();
+      render();
+      save();
+    });
   }
 
-  // ===== GENERATE =====
-  window.initPlan = function(){
-    planData.naps = +napsEl.value;
-    planData.daySleep = daySleepEl.value * 60;
+  /** INIT */
+  function init() {
+    els.wake.value = state.wake;
+    els.bed.value = state.bed;
+    els.napCount.value = state.naps;
+    els.daySleep.value = state.daySleep;
 
-    let awake = (planData.bed - planData.wake) - planData.daySleep;
-    planData.base = Math.round((awake / (planData.naps + 1)) / 15) * 15;
-
-    let weights = [0.35,0.25,0.25,0.15];
-    planData.lengths = weights.map(w => w * planData.daySleep);
-
-    planData.actual = Array(planData.naps).fill(null);
-
-    save();
+    bind();
+    generateSchedule();
     render();
-  };
-
-  // ===== TAP NAP =====
-  window.tapNap = function(i){
-    let nap = planData.actual[i];
-
-    if(!nap){
-      planData.actual[i] = {
-        start: nowMin(),
-        end: null,
-        active: true
-      };
-    }
-    else if(nap.active){
-      nap.end = nowMin();
-      nap.active = false;
-    }
-    else {
-      planData.actual[i] = {
-        start: nowMin(),
-        end: null,
-        active: true
-      };
-    }
-
-    save();
-    render();
-  };
-
-  // ===== EDIT TIME =====
-  window.editTime = function(i,type){
-    let nap = planData.actual[i];
-    if(!nap) return;
-
-    let input = prompt("Edit time (HH:MM)", minToInput(nap[type] || nowMin()));
-    if(!input) return;
-
-    let [h,m] = input.split(":").map(Number);
-    planData.actual[i][type] = h*60 + m;
-
-    save();
-    render();
-  };
-
-  // ===== RENDER =====
-  function render(){
-    if(!planData.naps) return;
-
-    let html = `<div class="card wakeCard">Wake Up ${toTime(planData.wake)}</div>`;
-
-    let current = planData.wake;
-
-    for(let i=0;i<planData.naps;i++){
-
-      let nap = planData.actual[i];
-
-      let start = nap?.start || current + planData.base;
-      let end = nap?.end || start + (planData.lengths?.[i] || 0);
-
-      let napClass = "napCard";
-      if(nap?.active) napClass += " active";
-      if(nap?.end && !nap?.active) napClass += " done";
-
-      html += `
-        <div class="card ${napClass}" onclick="tapNap(${i})">
-          <div>
-            <b>Nap ${i+1}</b><br>
-            ${formatHM(end - start)}
-          </div>
-          <div>
-            <span onclick="event.stopPropagation(); editTime(${i},'start')">
-              ${toTime(start)}
-            </span>
-            -
-            <span onclick="event.stopPropagation(); editTime(${i},'end')">
-              ${toTime(end)}
-            </span>
-          </div>
-        </div>
-      `;
-    }
-
-    output.innerHTML = html;
+    load();
   }
 
-  // ===== SLIDERS =====
-  wakeSlider.oninput = () => {
-    planData.wake = +wakeSlider.value;
-    updateUI(); save(); render();
-  };
+  init();
 
-  bedSlider.oninput = () => {
-    planData.bed = +bedSlider.value;
-    updateUI(); save(); render();
-  };
-
-  napsEl.oninput = updateUI;
-  daySleepEl.oninput = updateUI;
-
-  // INIT
-  updateUI();
 });
-
 </script>
+</body>
+</html>
